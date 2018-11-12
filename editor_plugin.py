@@ -13,7 +13,7 @@ DEFAULT_COMMAND = '{filepath}'
 DEFAULT_EDITOR = 'kate'
 DEFAULT_REGEX = '[^ \\t\\n\\r\\f\\v:]+?\.(ini|conf|me|txt|xml|json)[ \\n:]([0-9]+)*'
 REPLACE = {'\\t':'\t', '\\n':'\n', '\\r':'\r', '\\f':'\f', '\\v':'\v'}
-
+TERMINAL_EDITORS = ['vi', 'vim', 'emacs', 'pico', 'nano']
 
 class EditorPlugin(plugin.URLHandler):
     """ Process URLs returned by commands. """
@@ -53,14 +53,26 @@ class EditorPlugin(plugin.URLHandler):
 
     def get_cwd(self):
         """ Return current working directory. """
+        term = self.get_terminal()
+        if term:
+            return term.get_cwd()
+
+    def get_terminal(self):
+        """ Return terminal object. """
         # HACK: Because the current working directory is not available to plugins,
         # we need to use the inspect module to climb up the stack to the Terminal
         # object and call get_cwd() from there.
         for frameinfo in inspect.stack():
             frameobj = frameinfo[0].f_locals.get('self')
             if frameobj and frameobj.__class__.__name__ == 'Terminal':
-                return frameobj.get_cwd()
-        return None
+                return frameobj
+
+    def is_terminal_editor(self):
+        """ Return True if the editor is a terminal-based editor. """
+        editor = seltf.config.plugin_get(self.plugin_name, 'editor')
+        if editor in TERMINAL_EDITORS:
+            return True
+        return False
 
     def open_url(self):
         """ Return True if we should open the file. """
@@ -78,11 +90,14 @@ class EditorPlugin(plugin.URLHandler):
         command = self.config.plugin_get(self.plugin_name, 'editor') +' '+ self.config.plugin_get(self.plugin_name, 'command')
         command = command.replace('{filepath}', filepath)
         command = command.replace('{line}', lineno)
-        if filepath.find("/home/")<0:
-            command = 'kdesu ' + command
+        #if filepath.find("/home/")<0:
+        #    command = 'kdesu ' + command
         # Check we are opening the file
         if self.open_url():
             if os.path.exists(filepath):
-                subprocess.call(shlex.split(command))
+                if self.is_terminal_editor:
+                    self.get_terminal().feed(command + '\n')
+                else:
+                    subprocess.call(shlex.split(command))
             return '--version'
         return command
